@@ -1,41 +1,18 @@
 import { Request, Response } from "express";
-import { hashPassword } from "../services/password.service";
 import prisma from '../models/user'
-
-
-export const createUser = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const { email, password } = req.body
-        if (!email) {
-            res.status(400).json({ message: 'El email es obligatorio' })
-            return
-        }
-        if (!password) {
-            res.status(400).json({ message: 'El password es obligatorio' })
-            return
-        }
-        const hashedPassword = await hashPassword(password)
-        const user = await prisma.create(
-            {
-                data: {
-                    email,
-                    password: hashedPassword
-                }
-            }
-        )
-        res.status(201).json(user)
-    } catch (error: any) {
-        if (error?.code === 'P2002' && error?.meta?.target?.includes('email')) {
-            res.status(400).json({ message: 'El mail ingresado ya existe' })
-        }
-        console.log(error)
-        res.status(500).json({ error: 'Hubo un error, pruebe más tarde' })
-    }
-}
+import { userProfileRegister } from "../models/register.interface";
 
 export const getAllUsers = async (req: Request, res: Response): Promise<void> => {
     try {
-        const users = await prisma.findMany()
+        const users = await prisma.auth.findMany({
+            select: {
+                id: true,
+                email: true,
+                role: true,
+                createdAt: true,
+                updatedAt: true
+            }
+        });
         res.status(200).json(users);
     } catch (error: any) {
         console.log(error)
@@ -46,9 +23,14 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
 export const getUserById = async (req: Request, res: Response): Promise<void> => {
     const userId = parseInt(req.params.id)
     try {
-        const user = await prisma.findUnique({
+        const user = await prisma.userProfile.findUnique({
             where: {
-                id: userId
+                authId: userId
+            },
+            include: {
+                auth: {
+                    select: {role: true, email: true}
+                }
             }
         })
         if (!user) {
@@ -64,25 +46,21 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
 
 export const updateUser = async (req: Request, res: Response): Promise<void> => {
     const userId = parseInt(req.params.id)
-    const { email, password } = req.body
+    const userData = req.body as userProfileRegister
     try {
 
-        let dataToUpdate: any = { ...req.body }
-
-        if (password) {
-            const hashedPassword = await hashPassword(password)
-            dataToUpdate.password = hashedPassword
+        if(!userData){
+            res.status(400).json({ error: 'No hay datos para actualizar' })
+            return
         }
 
-        if (email) {
-            dataToUpdate.email = email
-        }
-
-        const user = await prisma.update({
+        const user = await prisma.auth.update({
             where: {
                 id: userId
             },
-            data: dataToUpdate
+            data: {
+                ...userData
+            }
         })
 
         res.status(200).json(user)
@@ -101,10 +79,10 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
 export const deleteUser = async (req: Request, res: Response): Promise<void> => {
     const userId = parseInt(req.params.id)
     try {
-        await prisma.delete({
+        await prisma.auth.delete({
             where: {
                 id: userId
-            }
+            },include: { userProfile: true }
         })
 
         res.status(200).json({
@@ -120,4 +98,23 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
         }
     }
 
+}
+
+export const getUserProfile = async (req: Request, res: Response): Promise<void> => {
+    const userId = parseInt(req.params.id)
+    try {
+        const userProfile = await prisma.userProfile.findUnique({
+            where: {
+                authId: userId
+            }
+        })
+        if (!userProfile) {
+            res.status(404).json({ error: 'El perfil del usuario no fue encontrado' })
+            return
+        }
+        res.status(200).json(userProfile)
+    } catch (error: any) {
+        console.log(error)
+        res.status(500).json({ error: 'Hubo un error, pruebe más tarde' })
+    }
 }

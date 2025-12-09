@@ -2,31 +2,56 @@ import { Request, Response } from "express";
 import { comparePasswords, hashPassword } from "../services/password.service";
 import prisma from '../models/user'
 import { generateToken } from "../services/auth.service";
+import { authRegister, userProfileRegister } from "../models/register.interface";
+import { authLogin } from "../models/login.interface";
 
 export const register = async (req: Request, res: Response): Promise<void> => {
 
-    const { email, password } = req.body
+    const { email, password, role, cedula, firstName, lastName, phone } = req.body;
+
+    const authData: authRegister = { email, password, role };
+    const profileData: userProfileRegister = { cedula, firstName, lastName, phone };
+
 
     try {
 
-        if (!email) {
-            res.status(400).json({ message: 'El email es obligatorio' })
+        if (!authData){
+            res.status(400).json({ message: 'Faltan datos de autenticación' })
             return
         }
-        if (!password) {
-            res.status(400).json({ message: 'El password es obligatorio' })
+        if (!profileData){
+            res.status(400).json({ message: 'Faltan datos de perfil' })
             return
         }
-        const hashedPassword = await hashPassword(password)
+        const hashedPassword = await hashPassword(authData.password)
 
-        const user = await prisma.create(
+        const emailExists = await prisma.auth.findUnique({ where: { email: authData.email } })
+        if (emailExists) {
+            res.status(400).json({ message: 'El mail ingresado ya existe' })
+            return
+        }
+        const cedulaExists = await prisma.userProfile.findUnique({ where: { cedula: profileData.cedula } })
+        if (cedulaExists) {
+            res.status(400).json({ message: 'La cédula ingresada ya existe' })
+            return
+        }
+
+
+        const user = await prisma.auth.create(
             {
                 data: {
-                    email,
+                    ...authData,
                     password: hashedPassword
                 }
             }
         )
+
+        await prisma.userProfile.create({
+            data: {
+                ...profileData,
+                authId: user.id
+            }
+        })
 
         const token = generateToken(user)
         res.status(201).json({ token })
@@ -46,36 +71,38 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 
 export const login = async (req: Request, res: Response): Promise<void> => {
 
-    const { email, password } = req.body
+    const loginData = req.body as authLogin;
 
     try {
 
-        if (!email) {
+        if (!loginData.email) {
             res.status(400).json({ message: 'El email es obligatorio' })
             return
         }
-        if (!password) {
+        if (!loginData.password) {
             res.status(400).json({ message: 'El password es obligatorio' })
             return
         }
 
-        const user = await prisma.findUnique({ where: { email } })
+        const user = await prisma.auth.findUnique({ where: { email: loginData.email } })
         if (!user) {
             res.status(404).json({ error: 'Usuario no encontrado' })
             return
         }
 
-        const passwordMatch = await comparePasswords(password, user.password);
+        const passwordMatch = await comparePasswords(loginData.password, user.password);
         if (!passwordMatch) {
             res.status(401).json({ error: 'Usuario y contraseñas no coinciden' })
+            return
         }
 
         const token = generateToken(user)
-        res.status(200).json({ token })
+        res.status(200).json({ token: token, role: user.role, userId: user.id })
 
 
     } catch (error: any) {
         console.log('Error: ', error)
+        res.status(500).json({ error: 'Hubo un error al iniciar sesión' })
     }
 
 }
