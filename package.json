@@ -8,7 +8,7 @@
     "build": "rimraf ./dist && tsc",
     "start": "node dist/server.js"
   },
-  "author": "Sergie Code",
+  "author": "Andrew sanchez",
   "license": "ISC",
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
